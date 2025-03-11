@@ -75,7 +75,7 @@ export async function checkCommitMessages(
     } else {
       core.info(`- failed: "${message}"`)
       if (args.debugRegex !== null) {
-          core.info(debugRegexMatching(args.debugRegex, message));
+          args.error += '\n' + debugRegexMatching(args.debugRegex, message);
       }
       result = false;
     }
