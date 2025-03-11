@@ -45,15 +45,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.checkCommitMessages = void 0;
 /**
@@ -66,44 +57,45 @@ const core = __importStar(__nccwpck_require__(2186));
  * @param     args messages, pattern and error message to process.
  * @returns   void
  */
-function checkCommitMessages(args) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // Check arguments
-        if (args.pattern.length === 0) {
-            throw new Error(`PATTERN not defined.`);
+async function checkCommitMessages(args) {
+    // Check arguments
+    if (args.pattern.length === 0) {
+        throw new Error(`PATTERN not defined.`);
+    }
+    const regex = new RegExp('[^gimsuy]', 'g');
+    let invalidChars;
+    let chars = '';
+    while ((invalidChars = regex.exec(args.flags)) !== null) {
+        chars += invalidChars[0];
+    }
+    if (chars !== '') {
+        throw new Error(`FLAGS contains invalid characters "${chars}".`);
+    }
+    if (args.error.length === 0) {
+        throw new Error(`ERROR not defined.`);
+    }
+    if (args.messages.length === 0) {
+        throw new Error(`MESSAGES not defined.`);
+    }
+    // Check messages
+    let result = true;
+    core.info(`Checking commit messages against "${args.pattern}"...`);
+    for (const message of args.messages) {
+        if (checkMessage(message, args.pattern, args.flags)) {
+            core.info(`- OK: "${message}"`);
         }
-        const regex = new RegExp('[^gimsuy]', 'g');
-        let invalidChars;
-        let chars = '';
-        while ((invalidChars = regex.exec(args.flags)) !== null) {
-            chars += invalidChars[0];
-        }
-        if (chars !== '') {
-            throw new Error(`FLAGS contains invalid characters "${chars}".`);
-        }
-        if (args.error.length === 0) {
-            throw new Error(`ERROR not defined.`);
-        }
-        if (args.messages.length === 0) {
-            throw new Error(`MESSAGES not defined.`);
-        }
-        // Check messages
-        let result = true;
-        core.info(`Checking commit messages against "${args.pattern}"...`);
-        for (const message of args.messages) {
-            if (checkMessage(message, args.pattern, args.flags)) {
-                core.info(`- OK: "${message}"`);
+        else {
+            core.info(`- failed: "${message}"`);
+            if (args.debugRegex !== null) {
+                core.info(debugRegexMatching(args.debugRegex, message));
             }
-            else {
-                core.info(`- failed: "${message}"`);
-                result = false;
-            }
+            result = false;
         }
-        // Throw error in case of failed test
-        if (!result) {
-            throw new Error(args.error);
-        }
-    });
+    }
+    // Throw error in case of failed test
+    if (!result) {
+        throw new Error(args.error);
+    }
 }
 exports.checkCommitMessages = checkCommitMessages;
 /**
@@ -117,6 +109,76 @@ function checkMessage(message, pattern, flags) {
     const regex = new RegExp(pattern, flags);
     return regex.test(message);
 }
+/*
+ * Debugs until which characters does a regex matches.
+ */
+const debugRegexMatching = (regexes, str) => {
+    str = str.replaceAll('\r', '');
+    let matchesUntil = 0;
+    const copyStr = str;
+    let rgx;
+    do {
+        if (Array.isArray(regexes[0])) {
+            const previousLength = str.length;
+            const [newString, failedAt] = optionalRemoval(regexes[0], str);
+            str = newString;
+            matchesUntil += previousLength - str.length;
+            if (failedAt !== null) {
+                break;
+            }
+        }
+        else {
+            rgx = new RegExp("^" + regexes[0]);
+            if (rgx.test(str)) {
+                const previousLength = str.length;
+                str = str.replace(rgx, '');
+                matchesUntil += previousLength - str.length;
+            }
+            else {
+                break;
+            }
+        }
+        regexes = regexes.splice(1);
+    } while (regexes.length > 0);
+    if (str.length === 0 && regexes.length === 0) {
+        return "The regex should work.";
+    }
+    else {
+        const paddingLeft = Math.max(matchesUntil - 10, 0);
+        const paddingRight = Math.min(matchesUntil + 10, copyStr.length);
+        const rightDots = paddingRight !== copyStr.length ? '…' : '';
+        const leftDots = paddingLeft !== 0 ? '…' : '';
+        if (str.length > 0 && regexes.length === 0) {
+            return `Trailing characters: "${str}"
+--------------------------------
+Context: "${leftDots}${copyStr.slice(paddingLeft, Math.min(copyStr.length, matchesUntil + 10)).replaceAll('\n', '␤')}${rightDots}"
+           ${" ".repeat(matchesUntil - paddingLeft)}^`;
+        }
+        else {
+            return `The regex stopped matching at index: ${matchesUntil}.
+Expected: "${rgx}"
+Context: "${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}"
+           ${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
+        }
+    }
+};
+/// If the first member of the optionalRegexes is matching then all the other should match. Else we don't test the others.
+const optionalRemoval = (optionalRegexes, str) => {
+    let rgx = new RegExp("^" + optionalRegexes[0]);
+    if (rgx.test(str)) {
+        do {
+            rgx = new RegExp("^" + optionalRegexes[0]);
+            if (rgx.test(str)) {
+                str = str.replace(rgx, '');
+            }
+            else {
+                return [str, 0];
+            }
+            optionalRegexes = optionalRegexes.splice(1);
+        } while (optionalRegexes.length > 0);
+    }
+    return [str, null];
+};
 
 
 /***/ }),
@@ -165,15 +227,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getInputs = void 0;
 /**
@@ -187,46 +240,49 @@ const graphql_1 = __nccwpck_require__(8467);
  *
  * @returns   ICheckerArguments
  */
-function getInputs() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const result = {};
-        core.debug('Get inputs...');
-        // Get pattern
-        result.pattern = core.getInput('pattern', { required: true });
-        core.debug(`pattern: ${result.pattern}`);
-        // Get flags
-        result.flags = core.getInput('flags');
-        core.debug(`flags: ${result.flags}`);
-        // Get error message
-        result.error = core.getInput('error', { required: true });
-        core.debug(`error: ${result.error}`);
-        // Get excludeTitle
-        const excludeTitleStr = core.getInput('excludeTitle');
-        core.debug(`excludeTitle: ${excludeTitleStr}`);
-        // Get excludeDescription
-        const excludeDescriptionStr = core.getInput('excludeDescription');
-        core.debug(`excludeDescription: ${excludeDescriptionStr}`);
-        // Get checkAllCommitMessages
-        const checkAllCommitMessagesStr = core.getInput('checkAllCommitMessages');
-        core.debug(`checkAllCommitMessages: ${checkAllCommitMessagesStr}`);
-        // Set pullRequestOptions
-        const pullRequestOptions = {
-            ignoreTitle: excludeTitleStr
-                ? excludeTitleStr === 'true'
-                : /* default */ false,
-            ignoreDescription: excludeDescriptionStr
-                ? excludeDescriptionStr === 'true'
-                : /* default */ false,
-            checkAllCommitMessages: checkAllCommitMessagesStr
-                ? checkAllCommitMessagesStr === 'true'
-                : /* default */ false,
-            accessToken: core.getInput('accessToken')
-        };
-        core.debug(`accessToken: ${pullRequestOptions.accessToken}`);
-        // Get commit messages
-        result.messages = yield getMessages(pullRequestOptions);
-        return result;
-    });
+async function getInputs() {
+    const result = {};
+    core.debug('Get inputs...');
+    // Get pattern
+    result.pattern = core.getInput('pattern', { required: true });
+    core.debug(`pattern: ${result.pattern}`);
+    // Get flags
+    result.flags = core.getInput('flags');
+    core.debug(`flags: ${result.flags}`);
+    // Get error message
+    result.error = core.getInput('error', { required: true });
+    core.debug(`error: ${result.error}`);
+    // Get excludeTitle
+    const excludeTitleStr = core.getInput('excludeTitle');
+    core.debug(`excludeTitle: ${excludeTitleStr}`);
+    // Get excludeDescription
+    const excludeDescriptionStr = core.getInput('excludeDescription');
+    core.debug(`excludeDescription: ${excludeDescriptionStr}`);
+    // Debug regex
+    const debugRegex = core.getInput('debugRegex');
+    core.debug(`debugRegex: ${debugRegex}`);
+    if (debugRegex.length > 0)
+        result.debugRegex = JSON.parse(debugRegex);
+    // Get checkAllCommitMessages
+    const checkAllCommitMessagesStr = core.getInput('checkAllCommitMessages');
+    core.debug(`checkAllCommitMessages: ${checkAllCommitMessagesStr}`);
+    // Set pullRequestOptions
+    const pullRequestOptions = {
+        ignoreTitle: excludeTitleStr
+            ? excludeTitleStr === 'true'
+            : /* default */ false,
+        ignoreDescription: excludeDescriptionStr
+            ? excludeDescriptionStr === 'true'
+            : /* default */ false,
+        checkAllCommitMessages: checkAllCommitMessagesStr
+            ? checkAllCommitMessagesStr === 'true'
+            : /* default */ false,
+        accessToken: core.getInput('accessToken')
+    };
+    core.debug(`accessToken: ${pullRequestOptions.accessToken}`);
+    // Get commit messages
+    result.messages = await getMessages(pullRequestOptions);
+    return result;
 }
 exports.getInputs = getInputs;
 /**
@@ -235,103 +291,100 @@ exports.getInputs = getInputs;
  *
  * @returns   string[]
  */
-function getMessages(pullRequestOptions) {
-    var _a;
-    return __awaiter(this, void 0, void 0, function* () {
-        core.debug('Get messages...');
-        core.debug(` - pullRequestOptions: ${JSON.stringify(pullRequestOptions, null, 2)}`);
-        const messages = [];
-        core.debug(` - eventName: ${github.context.eventName}`);
-        switch (github.context.eventName) {
-            case 'pull_request_target':
-            case 'pull_request': {
-                if (!github.context.payload) {
-                    throw new Error('No payload found in the context.');
-                }
-                if (!github.context.payload.pull_request) {
-                    throw new Error('No pull_request found in the payload.');
-                }
-                let message = '';
-                // Handle pull request title and body
-                if (!pullRequestOptions.ignoreTitle) {
-                    if (!github.context.payload.pull_request.title) {
-                        throw new Error('No title found in the pull_request.');
-                    }
-                    message += github.context.payload.pull_request.title;
-                }
-                else {
-                    core.debug(' - skipping title');
-                }
-                if (!pullRequestOptions.ignoreDescription) {
-                    if (github.context.payload.pull_request.body) {
-                        message = message.concat(message !== '' ? '\n\n' : '', github.context.payload.pull_request.body);
-                    }
-                }
-                else {
-                    core.debug(' - skipping description');
-                }
-                if (message) {
-                    messages.push(message);
-                }
-                // Handle pull request commits
-                if (pullRequestOptions.checkAllCommitMessages) {
-                    if (!pullRequestOptions.accessToken) {
-                        throw new Error('The `checkAllCommitMessages` option requires a github access token.');
-                    }
-                    if (!github.context.payload.pull_request.number) {
-                        throw new Error('No number found in the pull_request.');
-                    }
-                    if (!github.context.payload.repository) {
-                        throw new Error('No repository found in the payload.');
-                    }
-                    if (!github.context.payload.repository.name) {
-                        throw new Error('No name found in the repository.');
-                    }
-                    if (!github.context.payload.repository.owner ||
-                        (!github.context.payload.repository.owner.login &&
-                            !github.context.payload.repository.owner.name)) {
-                        throw new Error('No owner found in the repository.');
-                    }
-                    const commitMessages = yield getCommitMessagesFromPullRequest(pullRequestOptions.accessToken, (_a = github.context.payload.repository.owner.name) !== null && _a !== void 0 ? _a : github.context.payload.repository.owner.login, github.context.payload.repository.name, github.context.payload.pull_request.number);
-                    for (message of commitMessages) {
-                        if (message) {
-                            messages.push(message);
-                        }
-                    }
-                }
-                break;
+async function getMessages(pullRequestOptions) {
+    core.debug('Get messages...');
+    core.debug(` - pullRequestOptions: ${JSON.stringify(pullRequestOptions, null, 2)}`);
+    const messages = [];
+    core.debug(` - eventName: ${github.context.eventName}`);
+    switch (github.context.eventName) {
+        case 'pull_request_target':
+        case 'pull_request': {
+            if (!github.context.payload) {
+                throw new Error('No payload found in the context.');
             }
-            case 'push': {
-                if (!github.context.payload) {
-                    throw new Error('No payload found in the context.');
+            if (!github.context.payload.pull_request) {
+                throw new Error('No pull_request found in the payload.');
+            }
+            let message = '';
+            // Handle pull request title and body
+            if (!pullRequestOptions.ignoreTitle) {
+                if (!github.context.payload.pull_request.title) {
+                    throw new Error('No title found in the pull_request.');
                 }
-                if (!github.context.payload.commits ||
-                    !github.context.payload.commits.length) {
-                    core.debug(' - skipping commits');
-                    break;
+                message += github.context.payload.pull_request.title;
+            }
+            else {
+                core.debug(' - skipping title');
+            }
+            if (!pullRequestOptions.ignoreDescription) {
+                if (github.context.payload.pull_request.body) {
+                    message = message.concat(message !== '' ? '\n\n' : '', github.context.payload.pull_request.body);
                 }
-                for (const i in github.context.payload.commits) {
-                    if (github.context.payload.commits[i].message) {
-                        messages.push(github.context.payload.commits[i].message);
+            }
+            else {
+                core.debug(' - skipping description');
+            }
+            if (message) {
+                messages.push(message);
+            }
+            // Handle pull request commits
+            if (pullRequestOptions.checkAllCommitMessages) {
+                if (!pullRequestOptions.accessToken) {
+                    throw new Error('The `checkAllCommitMessages` option requires a github access token.');
+                }
+                if (!github.context.payload.pull_request.number) {
+                    throw new Error('No number found in the pull_request.');
+                }
+                if (!github.context.payload.repository) {
+                    throw new Error('No repository found in the payload.');
+                }
+                if (!github.context.payload.repository.name) {
+                    throw new Error('No name found in the repository.');
+                }
+                if (!github.context.payload.repository.owner ||
+                    (!github.context.payload.repository.owner.login &&
+                        !github.context.payload.repository.owner.name)) {
+                    throw new Error('No owner found in the repository.');
+                }
+                const commitMessages = await getCommitMessagesFromPullRequest(pullRequestOptions.accessToken, github.context.payload.repository.owner.name ??
+                    github.context.payload.repository.owner.login, github.context.payload.repository.name, github.context.payload.pull_request.number);
+                for (message of commitMessages) {
+                    if (message) {
+                        messages.push(message);
                     }
                 }
-                break;
             }
-            default: {
-                throw new Error(`Event "${github.context.eventName}" is not supported.`);
-            }
+            break;
         }
-        return messages;
-    });
+        case 'push': {
+            if (!github.context.payload) {
+                throw new Error('No payload found in the context.');
+            }
+            if (!github.context.payload.commits ||
+                !github.context.payload.commits.length) {
+                core.debug(' - skipping commits');
+                break;
+            }
+            for (const i in github.context.payload.commits) {
+                if (github.context.payload.commits[i].message) {
+                    messages.push(github.context.payload.commits[i].message);
+                }
+            }
+            break;
+        }
+        default: {
+            throw new Error(`Event "${github.context.eventName}" is not supported.`);
+        }
+    }
+    return messages;
 }
-function getCommitMessagesFromPullRequest(accessToken, repositoryOwner, repositoryName, pullRequestNumber) {
-    return __awaiter(this, void 0, void 0, function* () {
-        core.debug('Get messages from pull request...');
-        core.debug(` - accessToken: ${accessToken}`);
-        core.debug(` - repositoryOwner: ${repositoryOwner}`);
-        core.debug(` - repositoryName: ${repositoryName}`);
-        core.debug(` - pullRequestNumber: ${pullRequestNumber}`);
-        const query = `
+async function getCommitMessagesFromPullRequest(accessToken, repositoryOwner, repositoryName, pullRequestNumber) {
+    core.debug('Get messages from pull request...');
+    core.debug(` - accessToken: ${accessToken}`);
+    core.debug(` - repositoryOwner: ${repositoryOwner}`);
+    core.debug(` - repositoryName: ${repositoryName}`);
+    core.debug(` - pullRequestNumber: ${pullRequestNumber}`);
+    const query = `
   query commitMessages(
     $repositoryOwner: String!
     $repositoryName: String!
@@ -353,28 +406,27 @@ function getCommitMessagesFromPullRequest(accessToken, repositoryOwner, reposito
     }
   }
 `;
-        const variables = {
-            baseUrl: process.env['GITHUB_API_URL'] || 'https://api.github.com',
-            repositoryOwner,
-            repositoryName,
-            pullRequestNumber,
-            headers: {
-                authorization: `token ${accessToken}`
-            }
-        };
-        core.debug(` - query: ${query}`);
-        core.debug(` - variables: ${JSON.stringify(variables, null, 2)}`);
-        const response = yield (0, graphql_1.graphql)(query, variables);
-        const repository = response.repository;
-        core.debug(` - response: ${JSON.stringify(repository, null, 2)}`);
-        let messages = [];
-        if (repository.pullRequest) {
-            messages = repository.pullRequest.commits.edges.map(function (edge) {
-                return edge.node.commit.message;
-            });
+    const variables = {
+        baseUrl: process.env['GITHUB_API_URL'] || 'https://api.github.com',
+        repositoryOwner,
+        repositoryName,
+        pullRequestNumber,
+        headers: {
+            authorization: `token ${accessToken}`
         }
-        return messages;
-    });
+    };
+    core.debug(` - query: ${query}`);
+    core.debug(` - variables: ${JSON.stringify(variables, null, 2)}`);
+    const response = await (0, graphql_1.graphql)(query, variables);
+    const repository = response.repository;
+    core.debug(` - response: ${JSON.stringify(repository, null, 2)}`);
+    let messages = [];
+    if (repository.pullRequest) {
+        messages = repository.pullRequest.commits.edges.map(function (edge) {
+            return edge.node.commit.message;
+        });
+    }
+    return messages;
 }
 
 
@@ -424,15 +476,6 @@ var __importStar = (this && this.__importStar) || function (mod) {
     __setModuleDefault(result, mod);
     return result;
 };
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 /**
  * Imports
@@ -443,26 +486,24 @@ const commitMessageChecker = __importStar(__nccwpck_require__(6877));
 /**
  * Main function
  */
-function run() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const checkerArguments = yield inputHelper.getInputs();
-            if (checkerArguments.messages.length === 0) {
-                core.info(`No commits found in the payload, skipping check.`);
-            }
-            else {
-                yield commitMessageChecker.checkCommitMessages(checkerArguments);
-            }
+async function run() {
+    try {
+        const checkerArguments = await inputHelper.getInputs();
+        if (checkerArguments.messages.length === 0) {
+            core.info(`No commits found in the payload, skipping check.`);
         }
-        catch (error) {
-            if (error instanceof Error) {
-                core.setFailed(error);
-            }
-            else {
-                throw error; // re-throw the error unchanged
-            }
+        else {
+            await commitMessageChecker.checkCommitMessages(checkerArguments);
         }
-    });
+    }
+    catch (error) {
+        if (error instanceof Error) {
+            core.setFailed(error);
+        }
+        else {
+            throw error; // re-throw the error unchanged
+        }
+    }
 }
 /**
  * Main entry point
@@ -2522,7 +2563,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 
 var universalUserAgent = __nccwpck_require__(5030);
 var beforeAfterHook = __nccwpck_require__(3682);
-var request = __nccwpck_require__(6234);
+var request = __nccwpck_require__(6039);
 var graphql = __nccwpck_require__(6442);
 var authToken = __nccwpck_require__(334);
 
@@ -2704,7 +2745,7 @@ exports.Octokit = Octokit;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-var request = __nccwpck_require__(6234);
+var request = __nccwpck_require__(6039);
 var universalUserAgent = __nccwpck_require__(5030);
 
 const VERSION = "4.8.0";
@@ -2822,7 +2863,192 @@ exports.withCustomRequest = withCustomRequest;
 
 /***/ }),
 
-/***/ 9440:
+/***/ 6039:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+
+function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
+
+var endpoint = __nccwpck_require__(6217);
+var universalUserAgent = __nccwpck_require__(5030);
+var isPlainObject = __nccwpck_require__(3287);
+var nodeFetch = _interopDefault(__nccwpck_require__(467));
+var requestError = __nccwpck_require__(537);
+
+const VERSION = "5.6.3";
+
+function getBufferResponse(response) {
+  return response.arrayBuffer();
+}
+
+function fetchWrapper(requestOptions) {
+  const log = requestOptions.request && requestOptions.request.log ? requestOptions.request.log : console;
+
+  if (isPlainObject.isPlainObject(requestOptions.body) || Array.isArray(requestOptions.body)) {
+    requestOptions.body = JSON.stringify(requestOptions.body);
+  }
+
+  let headers = {};
+  let status;
+  let url;
+  const fetch = requestOptions.request && requestOptions.request.fetch || nodeFetch;
+  return fetch(requestOptions.url, Object.assign({
+    method: requestOptions.method,
+    body: requestOptions.body,
+    headers: requestOptions.headers,
+    redirect: requestOptions.redirect
+  }, // `requestOptions.request.agent` type is incompatible
+  // see https://github.com/octokit/types.ts/pull/264
+  requestOptions.request)).then(async response => {
+    url = response.url;
+    status = response.status;
+
+    for (const keyAndValue of response.headers) {
+      headers[keyAndValue[0]] = keyAndValue[1];
+    }
+
+    if ("deprecation" in headers) {
+      const matches = headers.link && headers.link.match(/<([^>]+)>; rel="deprecation"/);
+      const deprecationLink = matches && matches.pop();
+      log.warn(`[@octokit/request] "${requestOptions.method} ${requestOptions.url}" is deprecated. It is scheduled to be removed on ${headers.sunset}${deprecationLink ? `. See ${deprecationLink}` : ""}`);
+    }
+
+    if (status === 204 || status === 205) {
+      return;
+    } // GitHub API returns 200 for HEAD requests
+
+
+    if (requestOptions.method === "HEAD") {
+      if (status < 400) {
+        return;
+      }
+
+      throw new requestError.RequestError(response.statusText, status, {
+        response: {
+          url,
+          status,
+          headers,
+          data: undefined
+        },
+        request: requestOptions
+      });
+    }
+
+    if (status === 304) {
+      throw new requestError.RequestError("Not modified", status, {
+        response: {
+          url,
+          status,
+          headers,
+          data: await getResponseData(response)
+        },
+        request: requestOptions
+      });
+    }
+
+    if (status >= 400) {
+      const data = await getResponseData(response);
+      const error = new requestError.RequestError(toErrorMessage(data), status, {
+        response: {
+          url,
+          status,
+          headers,
+          data
+        },
+        request: requestOptions
+      });
+      throw error;
+    }
+
+    return getResponseData(response);
+  }).then(data => {
+    return {
+      status,
+      url,
+      headers,
+      data
+    };
+  }).catch(error => {
+    if (error instanceof requestError.RequestError) throw error;
+    throw new requestError.RequestError(error.message, 500, {
+      request: requestOptions
+    });
+  });
+}
+
+async function getResponseData(response) {
+  const contentType = response.headers.get("content-type");
+
+  if (/application\/json/.test(contentType)) {
+    return response.json();
+  }
+
+  if (!contentType || /^text\/|charset=utf-8$/.test(contentType)) {
+    return response.text();
+  }
+
+  return getBufferResponse(response);
+}
+
+function toErrorMessage(data) {
+  if (typeof data === "string") return data; // istanbul ignore else - just in case
+
+  if ("message" in data) {
+    if (Array.isArray(data.errors)) {
+      return `${data.message}: ${data.errors.map(JSON.stringify).join(", ")}`;
+    }
+
+    return data.message;
+  } // istanbul ignore next - just in case
+
+
+  return `Unknown error: ${JSON.stringify(data)}`;
+}
+
+function withDefaults(oldEndpoint, newDefaults) {
+  const endpoint = oldEndpoint.defaults(newDefaults);
+
+  const newApi = function (route, parameters) {
+    const endpointOptions = endpoint.merge(route, parameters);
+
+    if (!endpointOptions.request || !endpointOptions.request.hook) {
+      return fetchWrapper(endpoint.parse(endpointOptions));
+    }
+
+    const request = (route, parameters) => {
+      return fetchWrapper(endpoint.parse(endpoint.merge(route, parameters)));
+    };
+
+    Object.assign(request, {
+      endpoint,
+      defaults: withDefaults.bind(null, endpoint)
+    });
+    return endpointOptions.request.hook(request, endpointOptions);
+  };
+
+  return Object.assign(newApi, {
+    endpoint,
+    defaults: withDefaults.bind(null, endpoint)
+  });
+}
+
+const request = withDefaults(endpoint.endpoint, {
+  headers: {
+    "user-agent": `octokit-request.js/${VERSION} ${universalUserAgent.getUserAgent()}`
+  }
+});
+
+exports.request = request;
+//# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
+/***/ 6217:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -3220,119 +3446,7 @@ exports.endpoint = endpoint;
 
 /***/ }),
 
-/***/ 8467:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-
-var request = __nccwpck_require__(3758);
-var universalUserAgent = __nccwpck_require__(5030);
-
-const VERSION = "5.0.4";
-
-function _buildMessageForResponseErrors(data) {
-  return `Request failed due to following response errors:\n` + data.errors.map(e => ` - ${e.message}`).join("\n");
-}
-class GraphqlResponseError extends Error {
-  constructor(request, headers, response) {
-    super(_buildMessageForResponseErrors(response));
-    this.request = request;
-    this.headers = headers;
-    this.response = response;
-    this.name = "GraphqlResponseError";
-    // Expose the errors and response data in their shorthand properties.
-    this.errors = response.errors;
-    this.data = response.data;
-    // Maintains proper stack trace (only available on V8)
-    /* istanbul ignore next */
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-  }
-}
-
-const NON_VARIABLE_OPTIONS = ["method", "baseUrl", "url", "headers", "request", "query", "mediaType"];
-const FORBIDDEN_VARIABLE_OPTIONS = ["query", "method", "url"];
-const GHES_V3_SUFFIX_REGEX = /\/api\/v3\/?$/;
-function graphql(request, query, options) {
-  if (options) {
-    if (typeof query === "string" && "query" in options) {
-      return Promise.reject(new Error(`[@octokit/graphql] "query" cannot be used as variable name`));
-    }
-    for (const key in options) {
-      if (!FORBIDDEN_VARIABLE_OPTIONS.includes(key)) continue;
-      return Promise.reject(new Error(`[@octokit/graphql] "${key}" cannot be used as variable name`));
-    }
-  }
-  const parsedOptions = typeof query === "string" ? Object.assign({
-    query
-  }, options) : query;
-  const requestOptions = Object.keys(parsedOptions).reduce((result, key) => {
-    if (NON_VARIABLE_OPTIONS.includes(key)) {
-      result[key] = parsedOptions[key];
-      return result;
-    }
-    if (!result.variables) {
-      result.variables = {};
-    }
-    result.variables[key] = parsedOptions[key];
-    return result;
-  }, {});
-  // workaround for GitHub Enterprise baseUrl set with /api/v3 suffix
-  // https://github.com/octokit/auth-app.js/issues/111#issuecomment-657610451
-  const baseUrl = parsedOptions.baseUrl || request.endpoint.DEFAULTS.baseUrl;
-  if (GHES_V3_SUFFIX_REGEX.test(baseUrl)) {
-    requestOptions.url = baseUrl.replace(GHES_V3_SUFFIX_REGEX, "/api/graphql");
-  }
-  return request(requestOptions).then(response => {
-    if (response.data.errors) {
-      const headers = {};
-      for (const key of Object.keys(response.headers)) {
-        headers[key] = response.headers[key];
-      }
-      throw new GraphqlResponseError(requestOptions, headers, response.data);
-    }
-    return response.data.data;
-  });
-}
-
-function withDefaults(request, newDefaults) {
-  const newRequest = request.defaults(newDefaults);
-  const newApi = (query, options) => {
-    return graphql(newRequest, query, options);
-  };
-  return Object.assign(newApi, {
-    defaults: withDefaults.bind(null, newRequest),
-    endpoint: newRequest.endpoint
-  });
-}
-
-const graphql$1 = withDefaults(request.request, {
-  headers: {
-    "user-agent": `octokit-graphql.js/${VERSION} ${universalUserAgent.getUserAgent()}`
-  },
-  method: "POST",
-  url: "/graphql"
-});
-function withCustomRequest(customRequest) {
-  return withDefaults(customRequest, {
-    method: "POST",
-    url: "/graphql"
-  });
-}
-
-exports.GraphqlResponseError = GraphqlResponseError;
-exports.graphql = graphql$1;
-exports.withCustomRequest = withCustomRequest;
-//# sourceMappingURL=index.js.map
-
-
-/***/ }),
-
-/***/ 9723:
+/***/ 9440:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -3728,7 +3842,7 @@ exports.endpoint = endpoint;
 
 /***/ }),
 
-/***/ 8238:
+/***/ 8467:
 /***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
 
 "use strict";
@@ -3736,262 +3850,105 @@ exports.endpoint = endpoint;
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 
-function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
+var request = __nccwpck_require__(6234);
+var universalUserAgent = __nccwpck_require__(5030);
 
-var deprecation = __nccwpck_require__(8932);
-var once = _interopDefault(__nccwpck_require__(1223));
+const VERSION = "5.0.4";
 
-const logOnceCode = once(deprecation => console.warn(deprecation));
-const logOnceHeaders = once(deprecation => console.warn(deprecation));
-/**
- * Error with extra properties to help with debugging
- */
-
-class RequestError extends Error {
-  constructor(message, statusCode, options) {
-    super(message); // Maintains proper stack trace (only available on V8)
-
+function _buildMessageForResponseErrors(data) {
+  return `Request failed due to following response errors:\n` + data.errors.map(e => ` - ${e.message}`).join("\n");
+}
+class GraphqlResponseError extends Error {
+  constructor(request, headers, response) {
+    super(_buildMessageForResponseErrors(response));
+    this.request = request;
+    this.headers = headers;
+    this.response = response;
+    this.name = "GraphqlResponseError";
+    // Expose the errors and response data in their shorthand properties.
+    this.errors = response.errors;
+    this.data = response.data;
+    // Maintains proper stack trace (only available on V8)
     /* istanbul ignore next */
-
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, this.constructor);
     }
-
-    this.name = "HttpError";
-    this.status = statusCode;
-    let headers;
-
-    if ("headers" in options && typeof options.headers !== "undefined") {
-      headers = options.headers;
-    }
-
-    if ("response" in options) {
-      this.response = options.response;
-      headers = options.response.headers;
-    } // redact request credentials without mutating original request options
-
-
-    const requestCopy = Object.assign({}, options.request);
-
-    if (options.request.headers.authorization) {
-      requestCopy.headers = Object.assign({}, options.request.headers, {
-        authorization: options.request.headers.authorization.replace(/ .*$/, " [REDACTED]")
-      });
-    }
-
-    requestCopy.url = requestCopy.url // client_id & client_secret can be passed as URL query parameters to increase rate limit
-    // see https://developer.github.com/v3/#increasing-the-unauthenticated-rate-limit-for-oauth-applications
-    .replace(/\bclient_secret=\w+/g, "client_secret=[REDACTED]") // OAuth tokens can be passed as URL query parameters, although it is not recommended
-    // see https://developer.github.com/v3/#oauth2-token-sent-in-a-header
-    .replace(/\baccess_token=\w+/g, "access_token=[REDACTED]");
-    this.request = requestCopy; // deprecations
-
-    Object.defineProperty(this, "code", {
-      get() {
-        logOnceCode(new deprecation.Deprecation("[@octokit/request-error] `error.code` is deprecated, use `error.status`."));
-        return statusCode;
-      }
-
-    });
-    Object.defineProperty(this, "headers", {
-      get() {
-        logOnceHeaders(new deprecation.Deprecation("[@octokit/request-error] `error.headers` is deprecated, use `error.response.headers`."));
-        return headers || {};
-      }
-
-    });
   }
-
 }
 
-exports.RequestError = RequestError;
-//# sourceMappingURL=index.js.map
-
-
-/***/ }),
-
-/***/ 3758:
-/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
-
-"use strict";
-
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-
-function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
-
-var endpoint = __nccwpck_require__(9723);
-var universalUserAgent = __nccwpck_require__(5030);
-var isPlainObject = __nccwpck_require__(3287);
-var nodeFetch = _interopDefault(__nccwpck_require__(467));
-var requestError = __nccwpck_require__(8238);
-
-const VERSION = "6.2.2";
-
-function getBufferResponse(response) {
-  return response.arrayBuffer();
-}
-
-function fetchWrapper(requestOptions) {
-  const log = requestOptions.request && requestOptions.request.log ? requestOptions.request.log : console;
-
-  if (isPlainObject.isPlainObject(requestOptions.body) || Array.isArray(requestOptions.body)) {
-    requestOptions.body = JSON.stringify(requestOptions.body);
+const NON_VARIABLE_OPTIONS = ["method", "baseUrl", "url", "headers", "request", "query", "mediaType"];
+const FORBIDDEN_VARIABLE_OPTIONS = ["query", "method", "url"];
+const GHES_V3_SUFFIX_REGEX = /\/api\/v3\/?$/;
+function graphql(request, query, options) {
+  if (options) {
+    if (typeof query === "string" && "query" in options) {
+      return Promise.reject(new Error(`[@octokit/graphql] "query" cannot be used as variable name`));
+    }
+    for (const key in options) {
+      if (!FORBIDDEN_VARIABLE_OPTIONS.includes(key)) continue;
+      return Promise.reject(new Error(`[@octokit/graphql] "${key}" cannot be used as variable name`));
+    }
   }
-
-  let headers = {};
-  let status;
-  let url;
-  const fetch = requestOptions.request && requestOptions.request.fetch || globalThis.fetch ||
-  /* istanbul ignore next */
-  nodeFetch;
-  return fetch(requestOptions.url, Object.assign({
-    method: requestOptions.method,
-    body: requestOptions.body,
-    headers: requestOptions.headers,
-    redirect: requestOptions.redirect
-  }, // `requestOptions.request.agent` type is incompatible
-  // see https://github.com/octokit/types.ts/pull/264
-  requestOptions.request)).then(async response => {
-    url = response.url;
-    status = response.status;
-
-    for (const keyAndValue of response.headers) {
-      headers[keyAndValue[0]] = keyAndValue[1];
+  const parsedOptions = typeof query === "string" ? Object.assign({
+    query
+  }, options) : query;
+  const requestOptions = Object.keys(parsedOptions).reduce((result, key) => {
+    if (NON_VARIABLE_OPTIONS.includes(key)) {
+      result[key] = parsedOptions[key];
+      return result;
     }
-
-    if ("deprecation" in headers) {
-      const matches = headers.link && headers.link.match(/<([^>]+)>; rel="deprecation"/);
-      const deprecationLink = matches && matches.pop();
-      log.warn(`[@octokit/request] "${requestOptions.method} ${requestOptions.url}" is deprecated. It is scheduled to be removed on ${headers.sunset}${deprecationLink ? `. See ${deprecationLink}` : ""}`);
+    if (!result.variables) {
+      result.variables = {};
     }
-
-    if (status === 204 || status === 205) {
-      return;
-    } // GitHub API returns 200 for HEAD requests
-
-
-    if (requestOptions.method === "HEAD") {
-      if (status < 400) {
-        return;
+    result.variables[key] = parsedOptions[key];
+    return result;
+  }, {});
+  // workaround for GitHub Enterprise baseUrl set with /api/v3 suffix
+  // https://github.com/octokit/auth-app.js/issues/111#issuecomment-657610451
+  const baseUrl = parsedOptions.baseUrl || request.endpoint.DEFAULTS.baseUrl;
+  if (GHES_V3_SUFFIX_REGEX.test(baseUrl)) {
+    requestOptions.url = baseUrl.replace(GHES_V3_SUFFIX_REGEX, "/api/graphql");
+  }
+  return request(requestOptions).then(response => {
+    if (response.data.errors) {
+      const headers = {};
+      for (const key of Object.keys(response.headers)) {
+        headers[key] = response.headers[key];
       }
-
-      throw new requestError.RequestError(response.statusText, status, {
-        response: {
-          url,
-          status,
-          headers,
-          data: undefined
-        },
-        request: requestOptions
-      });
+      throw new GraphqlResponseError(requestOptions, headers, response.data);
     }
-
-    if (status === 304) {
-      throw new requestError.RequestError("Not modified", status, {
-        response: {
-          url,
-          status,
-          headers,
-          data: await getResponseData(response)
-        },
-        request: requestOptions
-      });
-    }
-
-    if (status >= 400) {
-      const data = await getResponseData(response);
-      const error = new requestError.RequestError(toErrorMessage(data), status, {
-        response: {
-          url,
-          status,
-          headers,
-          data
-        },
-        request: requestOptions
-      });
-      throw error;
-    }
-
-    return getResponseData(response);
-  }).then(data => {
-    return {
-      status,
-      url,
-      headers,
-      data
-    };
-  }).catch(error => {
-    if (error instanceof requestError.RequestError) throw error;else if (error.name === "AbortError") throw error;
-    throw new requestError.RequestError(error.message, 500, {
-      request: requestOptions
-    });
+    return response.data.data;
   });
 }
 
-async function getResponseData(response) {
-  const contentType = response.headers.get("content-type");
-
-  if (/application\/json/.test(contentType)) {
-    return response.json();
-  }
-
-  if (!contentType || /^text\/|charset=utf-8$/.test(contentType)) {
-    return response.text();
-  }
-
-  return getBufferResponse(response);
-}
-
-function toErrorMessage(data) {
-  if (typeof data === "string") return data; // istanbul ignore else - just in case
-
-  if ("message" in data) {
-    if (Array.isArray(data.errors)) {
-      return `${data.message}: ${data.errors.map(JSON.stringify).join(", ")}`;
-    }
-
-    return data.message;
-  } // istanbul ignore next - just in case
-
-
-  return `Unknown error: ${JSON.stringify(data)}`;
-}
-
-function withDefaults(oldEndpoint, newDefaults) {
-  const endpoint = oldEndpoint.defaults(newDefaults);
-
-  const newApi = function (route, parameters) {
-    const endpointOptions = endpoint.merge(route, parameters);
-
-    if (!endpointOptions.request || !endpointOptions.request.hook) {
-      return fetchWrapper(endpoint.parse(endpointOptions));
-    }
-
-    const request = (route, parameters) => {
-      return fetchWrapper(endpoint.parse(endpoint.merge(route, parameters)));
-    };
-
-    Object.assign(request, {
-      endpoint,
-      defaults: withDefaults.bind(null, endpoint)
-    });
-    return endpointOptions.request.hook(request, endpointOptions);
+function withDefaults(request, newDefaults) {
+  const newRequest = request.defaults(newDefaults);
+  const newApi = (query, options) => {
+    return graphql(newRequest, query, options);
   };
-
   return Object.assign(newApi, {
-    endpoint,
-    defaults: withDefaults.bind(null, endpoint)
+    defaults: withDefaults.bind(null, newRequest),
+    endpoint: newRequest.endpoint
   });
 }
 
-const request = withDefaults(endpoint.endpoint, {
+const graphql$1 = withDefaults(request.request, {
   headers: {
-    "user-agent": `octokit-request.js/${VERSION} ${universalUserAgent.getUserAgent()}`
-  }
+    "user-agent": `octokit-graphql.js/${VERSION} ${universalUserAgent.getUserAgent()}`
+  },
+  method: "POST",
+  url: "/graphql"
 });
+function withCustomRequest(customRequest) {
+  return withDefaults(customRequest, {
+    method: "POST",
+    url: "/graphql"
+  });
+}
 
-exports.request = request;
+exports.GraphqlResponseError = GraphqlResponseError;
+exports.graphql = graphql$1;
+exports.withCustomRequest = withCustomRequest;
 //# sourceMappingURL=index.js.map
 
 
@@ -5421,9 +5378,9 @@ var endpoint = __nccwpck_require__(9440);
 var universalUserAgent = __nccwpck_require__(5030);
 var isPlainObject = __nccwpck_require__(3287);
 var nodeFetch = _interopDefault(__nccwpck_require__(467));
-var requestError = __nccwpck_require__(537);
+var requestError = __nccwpck_require__(13);
 
-const VERSION = "5.6.3";
+const VERSION = "6.2.2";
 
 function getBufferResponse(response) {
   return response.arrayBuffer();
@@ -5439,7 +5396,9 @@ function fetchWrapper(requestOptions) {
   let headers = {};
   let status;
   let url;
-  const fetch = requestOptions.request && requestOptions.request.fetch || nodeFetch;
+  const fetch = requestOptions.request && requestOptions.request.fetch || globalThis.fetch ||
+  /* istanbul ignore next */
+  nodeFetch;
   return fetch(requestOptions.url, Object.assign({
     method: requestOptions.method,
     body: requestOptions.body,
@@ -5517,7 +5476,7 @@ function fetchWrapper(requestOptions) {
       data
     };
   }).catch(error => {
-    if (error instanceof requestError.RequestError) throw error;
+    if (error instanceof requestError.RequestError) throw error;else if (error.name === "AbortError") throw error;
     throw new requestError.RequestError(error.message, 500, {
       request: requestOptions
     });
@@ -5587,6 +5546,88 @@ const request = withDefaults(endpoint.endpoint, {
 });
 
 exports.request = request;
+//# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
+/***/ 13:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+
+function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
+
+var deprecation = __nccwpck_require__(8932);
+var once = _interopDefault(__nccwpck_require__(1223));
+
+const logOnceCode = once(deprecation => console.warn(deprecation));
+const logOnceHeaders = once(deprecation => console.warn(deprecation));
+/**
+ * Error with extra properties to help with debugging
+ */
+
+class RequestError extends Error {
+  constructor(message, statusCode, options) {
+    super(message); // Maintains proper stack trace (only available on V8)
+
+    /* istanbul ignore next */
+
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+
+    this.name = "HttpError";
+    this.status = statusCode;
+    let headers;
+
+    if ("headers" in options && typeof options.headers !== "undefined") {
+      headers = options.headers;
+    }
+
+    if ("response" in options) {
+      this.response = options.response;
+      headers = options.response.headers;
+    } // redact request credentials without mutating original request options
+
+
+    const requestCopy = Object.assign({}, options.request);
+
+    if (options.request.headers.authorization) {
+      requestCopy.headers = Object.assign({}, options.request.headers, {
+        authorization: options.request.headers.authorization.replace(/ .*$/, " [REDACTED]")
+      });
+    }
+
+    requestCopy.url = requestCopy.url // client_id & client_secret can be passed as URL query parameters to increase rate limit
+    // see https://developer.github.com/v3/#increasing-the-unauthenticated-rate-limit-for-oauth-applications
+    .replace(/\bclient_secret=\w+/g, "client_secret=[REDACTED]") // OAuth tokens can be passed as URL query parameters, although it is not recommended
+    // see https://developer.github.com/v3/#oauth2-token-sent-in-a-header
+    .replace(/\baccess_token=\w+/g, "access_token=[REDACTED]");
+    this.request = requestCopy; // deprecations
+
+    Object.defineProperty(this, "code", {
+      get() {
+        logOnceCode(new deprecation.Deprecation("[@octokit/request-error] `error.code` is deprecated, use `error.status`."));
+        return statusCode;
+      }
+
+    });
+    Object.defineProperty(this, "headers", {
+      get() {
+        logOnceHeaders(new deprecation.Deprecation("[@octokit/request-error] `error.headers` is deprecated, use `error.response.headers`."));
+        return headers || {};
+      }
+
+    });
+  }
+
+}
+
+exports.RequestError = RequestError;
 //# sourceMappingURL=index.js.map
 
 
