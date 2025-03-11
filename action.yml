@@ -28,6 +28,10 @@ inputs:
     description: 'you must provide GITHUB_TOKEN to this input if checkAllCommitMessages is true'
     required: false
     default: 'false'  
+  debugRegex:
+    description: 'A set of regex to debug non matching strings'
+    required: false
+    default: ''  
 runs:
   using: node16
   main: dist/index.js
