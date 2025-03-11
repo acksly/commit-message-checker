@@ -149,12 +149,12 @@ const debugRegexMatching = (regexes: (string | string[])[], str: string): string
 			return `Trailing characters: "${str}"
 --------------------------------
 Context: "${leftDots}${copyStr.slice(paddingLeft, Math.min(copyStr.length, matchesUntil + 10)).replaceAll('\n', '␤')}${rightDots}"
-           ${" ".repeat(matchesUntil - paddingLeft)}^`;
+          ${leftDots.replace('…', ' ')}${" ".repeat(matchesUntil - paddingLeft)}^`;
 		} else {
 			return `The regex stopped matching at index: ${matchesUntil}.
 Expected: "${rgx}"
 Context: "${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}"
-           ${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
+          ${leftDots.replace('…', ' ')}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
 		}
 	}
 }
