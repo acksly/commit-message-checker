@@ -69,13 +69,15 @@ export async function checkCommitMessages(
 
   core.info(`Checking commit messages against "${args.pattern}"...`)
 
+  let debugRegexMsg = '';
+
   for (const message of args.messages) {
     if (checkMessage(message, args.pattern, args.flags)) {
       core.info(`- OK: "${message}"`)
     } else {
       core.info(`- failed: "${message}"`)
       if (args.debugRegex !== null) {
-          args.error += '\n' + debugRegexMatching(args.debugRegex, message);
+          debugRegexMsg = '\n' + debugRegexMatching(args.debugRegex, message);
       }
       result = false;
     }
@@ -83,7 +85,7 @@ export async function checkCommitMessages(
 
   // Throw error in case of failed test
   if (!result) {
-    throw new Error(args.error)
+    throw new Error(args.error + debugRegexMsg)
   }
 }
 
@@ -149,12 +151,12 @@ const debugRegexMatching = (regexes: (string | string[])[], str: string): string
 			return `Trailing characters: "${str}"
 --------------------------------
 Context: "${leftDots}${copyStr.slice(paddingLeft, Math.min(copyStr.length, matchesUntil + 10)).replaceAll('\n', '␤')}${rightDots}"
-          ${leftDots.replace('…', ' ')}${" ".repeat(matchesUntil - paddingLeft)}^`;
+          ${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^`;
 		} else {
 			return `The regex stopped matching at index: ${matchesUntil}.
-Expected: "${rgx}"
+Expected: ${rgx}
 Context: "${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}"
-          ${leftDots.replace('…', ' ')}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
+          ${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
 		}
 	}
 }
