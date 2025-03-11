@@ -1,6 +1,6 @@
-name: 'GS Commit Message Checker'
+name: ' Commit Message Checker'
 description: 'Check the commit message against a regex pattern'
-author: 'Gilbertsoft LLC'
+author: 'acksly'
 inputs:
   pattern:
     description: 'A regex pattern to check if a commit message is valid.'
