@@ -146,17 +146,19 @@ const debugRegexMatching = (regexes: (string | string[])[], str: string): string
 		const paddingRight = Math.min(matchesUntil + 10, copyStr.length);
 		const rightDots = paddingRight !== copyStr.length ? '…' :  '';
 		const leftDots = paddingLeft !== 0 ? '…' :  '';
+        const errorArrow = `${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
+        const context = `${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}`;
 
 		if (str.length > 0 && regexes.length === 0) {
 			return `Trailing characters: "${str}"
 --------------------------------
-Context: "${leftDots}${copyStr.slice(paddingLeft, Math.min(copyStr.length, matchesUntil + 10)).replaceAll('\n', '␤')}${rightDots}"
-          ${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^`;
+Context: "${context}"
+          ${errorArrow}`;
 		} else {
-			return `The regex stopped matching at index: ${matchesUntil}.
+			return `The regex stopped matching at index: ${matchesUntil}
 Expected: ${rgx}
-Context: "${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}"
-          ${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
+Context: "${context}"
+          ${errorArrow}`;
 		}
 	}
 }
