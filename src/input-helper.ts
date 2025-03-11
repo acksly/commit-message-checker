@@ -27,7 +27,7 @@ export interface PullRequestOptions {
   ignoreTitle: boolean
   ignoreDescription: boolean
   checkAllCommitMessages: boolean // requires github token
-  accessToken: string
+  accessToken: string,
 }
 
 /**
@@ -59,6 +59,12 @@ export async function getInputs(): Promise<ICheckerArguments> {
   // Get excludeDescription
   const excludeDescriptionStr = core.getInput('excludeDescription')
   core.debug(`excludeDescription: ${excludeDescriptionStr}`)
+
+  // Debug regex
+  const debugRegex = core.getInput('debugRegex')
+  core.debug(`debugRegex: ${debugRegex}`)
+
+  if (debugRegex.length > 0) result.debugRegex = JSON.parse(debugRegex);
 
   // Get checkAllCommitMessages
   const checkAllCommitMessagesStr = core.getInput('checkAllCommitMessages')
