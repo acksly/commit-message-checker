@@ -59,7 +59,12 @@ const core = __importStar(__nccwpck_require__(2186));
  */
 async function checkCommitMessages(args) {
     // Check arguments
-    if (args.pattern.length === 0) {
+    if ((args.pattern === null &&
+        args.progressivePattern === null) || (args.pattern === null &&
+        args.progressivePattern !== null &&
+        args.progressivePattern.length !== 0) || (args.progressivePattern === null &&
+        args.pattern !== null &&
+        args.pattern.length !== 0)) {
         throw new Error(`PATTERN not defined.`);
     }
     const regex = new RegExp('[^gimsuy]', 'g');
@@ -80,22 +85,34 @@ async function checkCommitMessages(args) {
     // Check messages
     let result = true;
     core.info(`Checking commit messages against "${args.pattern}"...`);
-    let debugRegexMsg = '';
     for (const message of args.messages) {
-        if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
-            core.info(`- OK: "${message}"`);
+        if (args.pattern === null || args.pattern.length === 0) {
+            const errorMessage = debugRegexMatching(args.progressivePattern, message);
+            if (errorMessage !== null) {
+                core.info(`- failed: "${message}"`);
+                args.error += '\n' + errorMessage;
+                result = false;
+            }
+            else {
+                core.info(`- OK: "${message}"`);
+            }
         }
         else {
-            core.info(`- failed: "${message}"`);
-            if (args.debugRegex !== null) {
-                debugRegexMsg = '\n' + debugRegexMatching(args.debugRegex, message);
+            if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
+                core.info(`- OK: "${message}"`);
             }
-            result = false;
+            else {
+                core.info(`- failed: "${message}"`);
+                if (args.progressivePattern !== null) {
+                    args.error += '\n' + (debugRegexMatching(args.progressivePattern, message) ?? 'Unexpected missmatch.');
+                }
+                result = false;
+            }
         }
     }
     // Throw error in case of failed test
     if (!result) {
-        throw new Error(args.error + debugRegexMsg);
+        throw new Error(args.error);
     }
 }
 exports.checkCommitMessages = checkCommitMessages;
@@ -142,7 +159,7 @@ const debugRegexMatching = (regexes, str) => {
         regexes = regexes.splice(1);
     } while (regexes.length > 0);
     if (str.length === 0 && regexes.length === 0) {
-        return "The regex should work.";
+        return null;
     }
     else {
         const paddingLeft = Math.max(matchesUntil - 10, 0);
@@ -247,7 +264,7 @@ async function getInputs() {
     const result = {};
     core.debug('Get inputs...');
     // Get pattern
-    result.pattern = core.getInput('pattern', { required: true });
+    result.pattern = core.getInput('pattern');
     core.debug(`pattern: ${result.pattern}`);
     // Get flags
     result.flags = core.getInput('flags');
@@ -262,10 +279,10 @@ async function getInputs() {
     const excludeDescriptionStr = core.getInput('excludeDescription');
     core.debug(`excludeDescription: ${excludeDescriptionStr}`);
     // Debug regex
-    const debugRegex = core.getInput('debugRegex');
-    core.debug(`debugRegex: ${debugRegex}`);
-    if (debugRegex.length > 0)
-        result.debugRegex = JSON.parse(debugRegex);
+    const progressivePattern = core.getInput('progressivePattern');
+    core.debug(`progressivePattern: ${progressivePattern}`);
+    if (progressivePattern.length > 0)
+        result.progressivePattern = JSON.parse(progressivePattern);
     // Get checkAllCommitMessages
     const checkAllCommitMessagesStr = core.getInput('checkAllCommitMessages');
     core.debug(`checkAllCommitMessages: ${checkAllCommitMessagesStr}`);
