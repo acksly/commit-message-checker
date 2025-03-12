@@ -25,11 +25,11 @@ import * as core from '@actions/core'
  * error message and the messages.
  */
 export interface ICheckerArguments {
-  pattern: string
+  pattern: null | string
   flags: string
   error: string
   messages: string[]
-  debugRegex: null | (string | string[])[],
+  progressivePattern: null | (string | string[])[],
 }
 
 /**
@@ -41,52 +41,75 @@ export interface ICheckerArguments {
 export async function checkCommitMessages(
   args: ICheckerArguments
 ): Promise<void> {
-  // Check arguments
-  if (args.pattern.length === 0) {
-    throw new Error(`PATTERN not defined.`)
-  }
-
-  const regex = new RegExp('[^gimsuy]', 'g')
-  let invalidChars
-  let chars = ''
-  while ((invalidChars = regex.exec(args.flags)) !== null) {
-    chars += invalidChars[0]
-  }
-  if (chars !== '') {
-    throw new Error(`FLAGS contains invalid characters "${chars}".`)
-  }
-
-  if (args.error.length === 0) {
-    throw new Error(`ERROR not defined.`)
-  }
-
-  if (args.messages.length === 0) {
-    throw new Error(`MESSAGES not defined.`)
-  }
-
-  // Check messages
-  let result = true
-
-  core.info(`Checking commit messages against "${args.pattern}"...`)
-
-  let debugRegexMsg = '';
-
-  for (const message of args.messages) {
-    if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
-      core.info(`- OK: "${message}"`)
-    } else {
-      core.info(`- failed: "${message}"`)
-      if (args.debugRegex !== null) {
-          debugRegexMsg = '\n' + debugRegexMatching(args.debugRegex, message);
-      }
-      result = false;
+    // Check arguments
+    if (
+        (
+            args.pattern === null &&
+            args.progressivePattern === null
+        ) || (
+            args.pattern === null &&
+            args.progressivePattern !== null &&
+            args.progressivePattern.length !== 0
+        ) || (
+            args.progressivePattern === null &&
+            args.pattern !== null &&
+            args.pattern.length !== 0
+        )
+    ) {
+        throw new Error(`PATTERN not defined.`)
     }
-  }
 
-  // Throw error in case of failed test
-  if (!result) {
-    throw new Error(args.error + debugRegexMsg)
-  }
+    const regex = new RegExp('[^gimsuy]', 'g')
+    let invalidChars
+    let chars = ''
+    while ((invalidChars = regex.exec(args.flags)) !== null) {
+        chars += invalidChars[0]
+    }
+    if (chars !== '') {
+        throw new Error(`FLAGS contains invalid characters "${chars}".`)
+    }
+
+    if (args.error.length === 0) {
+        throw new Error(`ERROR not defined.`)
+    }
+
+    if (args.messages.length === 0) {
+        throw new Error(`MESSAGES not defined.`)
+    }
+
+    // Check messages
+    let result = true
+
+    core.info(`Checking commit messages against "${args.pattern}"...`)
+
+    for (const message of args.messages) {
+        if (args.pattern === null || args.pattern.length === 0) {
+            const errorMessage = debugRegexMatching(args.progressivePattern as (string | string[])[], message);
+
+            if (errorMessage !== null) {
+                core.info(`- failed: "${message}"`)
+                args.error += '\n' + errorMessage;
+                result = false;
+            } else {
+                core.info(`- OK: "${message}"`)
+            }
+        } else {
+            if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
+                core.info(`- OK: "${message}"`)
+            } else {
+                core.info(`- failed: "${message}"`)
+                if (args.progressivePattern !== null) {
+                    args.error += '\n' + (debugRegexMatching(args.progressivePattern, message) ?? 'Unexpected missmatch.');
+                }
+                result = false;
+            }
+        }
+    }
+
+    // Throw error in case of failed test
+    if (!result) {
+        throw new Error(args.error)
+    }
 }
 
 /**
@@ -108,7 +131,7 @@ function checkMessage(
 /*
  * Debugs until which characters does a regex matches.
  */
-const debugRegexMatching = (regexes: (string | string[])[], str: string): string => {
+const debugRegexMatching = (regexes: (string | string[])[], str: string): string | null => {
 	str = str.replaceAll('\r', '');
 	let matchesUntil = 0;
 	const copyStr = str;
@@ -140,7 +163,7 @@ const debugRegexMatching = (regexes: (string | string[])[], str: string): string
 	} while (regexes.length > 0);
 
 	if (str.length === 0 && regexes.length === 0) {
-		return "The regex should work.";
+		return null;
 	} else {
 		const paddingLeft = Math.max(matchesUntil - 10, 0);
 		const paddingRight = Math.min(matchesUntil + 10, copyStr.length);

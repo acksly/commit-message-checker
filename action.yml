@@ -3,8 +3,13 @@ description: 'Check the commit message against a regex pattern'
 author: 'acksly'
 inputs:
   pattern:
-    description: 'A regex pattern to check if a commit message is valid.'
-    required: true
+    description: 'A regex pattern to check if a commit message is valid. Either `progressivePattern` or `pattern` should be present.'
+    default: ''  
+    required: false
+  progressivePattern:
+    description: 'A set of regex to progressively check matching strings. Either `progressivePattern` or `pattern` should be present.'
+    required: false
+    default: ''  
   flags:
     description: 'Expression flags change how the expression is interpreted.'
     required: false
@@ -28,10 +33,6 @@ inputs:
     description: 'you must provide GITHUB_TOKEN to this input if checkAllCommitMessages is true'
     required: false
     default: 'false'  
-  debugRegex:
-    description: 'A set of regex to debug non matching strings'
-    required: false
-    default: ''  
 runs:
   using: node16
   main: dist/index.js

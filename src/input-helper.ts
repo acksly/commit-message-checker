@@ -41,7 +41,7 @@ export async function getInputs(): Promise<ICheckerArguments> {
   core.debug('Get inputs...')
 
   // Get pattern
-  result.pattern = core.getInput('pattern', {required: true})
+  result.pattern = core.getInput('pattern')
   core.debug(`pattern: ${result.pattern}`)
 
   // Get flags
@@ -61,10 +61,10 @@ export async function getInputs(): Promise<ICheckerArguments> {
   core.debug(`excludeDescription: ${excludeDescriptionStr}`)
 
   // Debug regex
-  const debugRegex = core.getInput('debugRegex')
-  core.debug(`debugRegex: ${debugRegex}`)
+  const progressivePattern = core.getInput('progressivePattern')
+  core.debug(`progressivePattern: ${progressivePattern}`)
 
-  if (debugRegex.length > 0) result.debugRegex = JSON.parse(debugRegex);
+  if (progressivePattern.length > 0) result.progressivePattern = JSON.parse(progressivePattern);
 
   // Get checkAllCommitMessages
   const checkAllCommitMessagesStr = core.getInput('checkAllCommitMessages')
