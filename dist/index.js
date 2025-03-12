@@ -82,7 +82,7 @@ async function checkCommitMessages(args) {
     core.info(`Checking commit messages against "${args.pattern}"...`);
     let debugRegexMsg = '';
     for (const message of args.messages) {
-        if (checkMessage(message, args.pattern, args.flags)) {
+        if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
             core.info(`- OK: "${message}"`);
         }
         else {
