@@ -25,11 +25,11 @@ import * as core from '@actions/core'
  * error message and the messages.
  */
 export interface ICheckerArguments {
-  pattern: null | string
-  flags: string
-  error: string
-  messages: string[]
-  progressivePattern: null | (string | string[])[],
+    pattern: null | string
+    flags: string
+    error: string
+    messages: string[]
+    progressivePattern: null | (string | string[])[],
 }
 
 /**
@@ -39,7 +39,7 @@ export interface ICheckerArguments {
  * @returns   void
  */
 export async function checkCommitMessages(
-  args: ICheckerArguments
+    args: ICheckerArguments
 ): Promise<void> {
     // Check arguments
     if (
@@ -120,89 +120,89 @@ export async function checkCommitMessages(
  * @returns   boolean
  */
 function checkMessage(
-  message: string,
-  pattern: string,
-  flags: string
+    message: string,
+    pattern: string,
+    flags: string
 ): boolean {
-  const regex = new RegExp(pattern, flags)
-  return regex.test(message)
+    const regex = new RegExp(pattern, flags)
+    return regex.test(message)
 }
 
 /*
  * Debugs until which characters does a regex matches.
  */
 const debugRegexMatching = (regexes: (string | string[])[], str: string): string | null => {
-	str = str.replaceAll('\r', '');
-	let matchesUntil = 0;
-	const copyStr = str;
-	let rgx;
+    str = str.replaceAll('\r', '');
+    let matchesUntil = 0;
+    const copyStr = str;
+    let rgx;
 
-	do {
-		if (Array.isArray(regexes[0])) {
-			const previousLength = str.length;
-			const [newString, failedAt] = optionalRemoval(regexes[0], str);
-			str = newString;
-			matchesUntil += previousLength - str.length;
+    do {
+        if (Array.isArray(regexes[0])) {
+            const previousLength = str.length;
+            const [newString, failedAt] = optionalRemoval(regexes[0], str);
+            str = newString;
+            matchesUntil += previousLength - str.length;
 
-			if (failedAt !== null) {
+            if (failedAt !== null) {
                 break;
-			}
-		} else {
-			rgx = new RegExp("^" + regexes[0]);
+            }
+        } else {
+            rgx = new RegExp("^" + regexes[0]);
 
-			if (rgx.test(str)) {
-				const previousLength = str.length;
-				str = str.replace(rgx, '');
-				matchesUntil += previousLength - str.length;
-			} else {
-				break;
-			}
-		}
+            if (rgx.test(str)) {
+                const previousLength = str.length;
+                str = str.replace(rgx, '');
+                matchesUntil += previousLength - str.length;
+            } else {
+                break;
+            }
+        }
 
-		regexes = regexes.splice(1);
-	} while (regexes.length > 0);
+        regexes = regexes.splice(1);
+    } while (regexes.length > 0);
 
-	if (str.length === 0 && regexes.length === 0) {
-		return null;
-	} else {
-		const paddingLeft = Math.max(matchesUntil - 10, 0);
-		const paddingRight = Math.min(matchesUntil + 10, copyStr.length);
-		const rightDots = paddingRight !== copyStr.length ? '…' :  '';
-		const leftDots = paddingLeft !== 0 ? '…' :  '';
+    if (str.length === 0 && regexes.length === 0) {
+        return null;
+    } else {
+        const paddingLeft = Math.max(matchesUntil - 10, 0);
+        const paddingRight = Math.min(matchesUntil + 10, copyStr.length);
+        const rightDots = paddingRight !== copyStr.length ? '…' :  '';
+        const leftDots = paddingLeft !== 0 ? '…' :  '';
         const errorArrow = `${' '.repeat(leftDots.length)}${" ".repeat(matchesUntil - paddingLeft)}^${"~".repeat(paddingRight - matchesUntil)}`;
         const context = `${leftDots}${copyStr.slice(paddingLeft, paddingRight).replaceAll('\n', '␤')}${rightDots}`;
 
-		if (str.length > 0 && regexes.length === 0) {
-			return `Trailing characters: "${str}"
---------------------------------
-Context: "${context}"
-          ${errorArrow}`;
-		} else {
-			return `The regex stopped matching at index: ${matchesUntil}
-Expected: ${rgx}
-Context: "${context}"
-          ${errorArrow}`;
-		}
-	}
+        if (str.length > 0 && regexes.length === 0) {
+            return `Trailing characters: "${str}"
+            --------------------------------
+                Context: "${context}"
+            ${errorArrow}`;
+        } else {
+            return `The regex stopped matching at index: ${matchesUntil}
+            Expected: ${rgx}
+            Context: "${context}"
+            ${errorArrow}`;
+        }
+    }
 }
 
 /// If the first member of the optionalRegexes is matching then all the other should match. Else we don't test the others.
 const optionalRemoval = (optionalRegexes: string[], str: string): [string, number | null] => {
-	let rgx = new RegExp("^" + optionalRegexes[0]);
+    let rgx = new RegExp("^" + optionalRegexes[0]);
 
-	if (rgx.test(str)) {
-		do {
-			rgx = new RegExp("^" + optionalRegexes[0]);
+    if (rgx.test(str)) {
+        do {
+            rgx = new RegExp("^" + optionalRegexes[0]);
 
-			if (rgx.test(str)) {
-				str = str.replace(rgx, '');
-			} else {
-				return [str, 0];
-			}
-			optionalRegexes = optionalRegexes.splice(1);
-		} while (optionalRegexes.length > 0);
-	}
+            if (rgx.test(str)) {
+                str = str.replace(rgx, '');
+            } else {
+                return [str, 0];
+            }
+            optionalRegexes = optionalRegexes.splice(1);
+        } while (optionalRegexes.length > 0);
+    }
 
-	return [str, null];
+    return [str, null];
 }
 
