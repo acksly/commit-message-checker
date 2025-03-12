@@ -72,7 +72,7 @@ export async function checkCommitMessages(
   let debugRegexMsg = '';
 
   for (const message of args.messages) {
-    if (checkMessage(message, args.pattern, args.flags)) {
+    if (checkMessage(message.replaceAll('\r', ''), args.pattern, args.flags)) {
       core.info(`- OK: "${message}"`)
     } else {
       core.info(`- failed: "${message}"`)
